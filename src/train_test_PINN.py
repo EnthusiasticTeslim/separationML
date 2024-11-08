@@ -8,8 +8,6 @@ import torch
 import torch.nn as nn
 # plotting
 import matplotlib.pyplot as plt
-# numerical computation
-
 # special class
 from nn import PINN
 from physics import electrodialysis
