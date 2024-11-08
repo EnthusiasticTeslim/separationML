@@ -1,3 +1,4 @@
 # add cache files
 .cache
 __pycache__
+*dump*
