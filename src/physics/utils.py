@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy as sp
+from scipy.integrate import simpson, solve_ivp, odeint
 from scipy.optimize import minimize
 import argparse
 import os
@@ -19,6 +19,20 @@ def ppm2molm3(ppm, mw):
     """ convert ppm to mol/m3 """
 
     return (ppm / mw / 1000) * 1000
+
+def SR(Cdil_f, Cdil_i):
+    """ Separation efficiency """
+    
+    return 1 - Cdil_f / Cdil_i
+
+def EC(N, Ecell, j, teval, Cdil_in, Cdil, Qdil):
+    """ Energy consumption in KWh/kg """
+    
+    EC_J = N * Ecell * simpson(j, teval) # J
+    m_kg = (1e-3 * Qdil * (MW_Cl + MW_Na) * simpson((Cdil_in - Cdil), teval)) # kg
+    EC_per_kg = 2.78 * 1e-7 * EC_J / m_kg # J/kg to KWh/kg
+
+    return EC_per_kg
 
 def simulate(model, dt: int = 10, method: str = 'solve_ivp'): 
     """ Simulate the electrodialysis process
@@ -42,13 +56,13 @@ def simulate(model, dt: int = 10, method: str = 'solve_ivp'):
     # solve ODE
     teval = np.linspace(0, model.T_tot, dt)
     if method == 'odeint':
-        C = sp.integrate.odeint(func=model.dCdt, y0=C0, t=teval, tfirst=True) # Solve the ODEs
+        C = odeint(func=model.dCdt, y0=C0, t=teval, tfirst=True) # Solve the ODEs
         Cconc = np.array(C[:, 0])
         Cdil = np.array(C[:, 1])
         Cconc_in = np.array(C[:, 2])
         Cdil_in = np.array(C[:, 3])
     elif method == 'solve_ivp':
-        sol = sp.integrate.solve_ivp(fun=model.dCdt, t_span=(0, model.T_tot), y0=C0, t_eval=teval, method='LSODA')
+        sol = solve_ivp(fun=model.dCdt, t_span=(0, model.T_tot), y0=C0, t_eval=teval, method='LSODA')
         Cconc = np.array(sol.y[0])
         Cdil = np.array(sol.y[1])
         Cconc_in = np.array(sol.y[2])
@@ -64,8 +78,8 @@ def simulate(model, dt: int = 10, method: str = 'solve_ivp'):
     j_values = np.array(j_values) # A/m2
 
     cases  = {  
-                'SR': (1 - Cdil[-1] / Cdil0), # Separation efficiency, unitless
-                'EC': 0, # Energy consumption, kJ/kg
+                'SR': SR(Cdil_f=Cdil[-1], Cdil_i=Cdil0), # Separation efficiency, unitless
+                'EC': EC(N=model.N, Ecell=model.Estack, j=j_values, teval=teval, Cdil_in=Cdil0, Cdil=Cdil, Qdil=model.Qdil), # Energy consumption, KWh/kg
                 'Cconc': Cconc, # Concentration in effluent concentrate stream, mol/m3
                 'Cdil': Cdil, # Concentration in effluent diluate stream, mol/m3
                 'Cconc_in': Cconc_in,  # Concentration in inlet concentrate stream, mol/m3
@@ -110,12 +124,13 @@ def objective(
     result  = simulate(model=estimator, dt=steps, method=method)
     # get the separation efficiency and final concentration
     SR = result['SR'] # max is 99.9%
+    EC = result['EC'] # KWh/kg
     final_concentration = result['Cdil'][-1] # final concentration in diluate stream
     
     if is_scipy:
         return -SR
     else:
-        return SR, final_concentration
+        return SR, EC
 
 def scipy_optimization(
         estimator: callable, 
