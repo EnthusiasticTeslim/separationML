@@ -1,2 +1,2 @@
-from .model import *
+from .device import *
 from .utils import *
