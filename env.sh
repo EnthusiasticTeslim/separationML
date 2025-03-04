@@ -2,7 +2,7 @@
 #!/bin/bash
 
 # Define the name of the virtual environment
-VENV_NAME="separationML"
+VENV_NAME="separation"
 
 # Check if Python3 is installed
 if ! command -v python3 &> /dev/null; then
